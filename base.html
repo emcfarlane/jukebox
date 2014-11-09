@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="description" content="">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jukebox-Alpha-0.1</title>
+  <!-- CSS -->
+  <link rel="stylesheet" href="/style.css">
+</head>
+
+<!-- Site content -->
+<body>
+	<div class="container">
+		<h1>JUKEBOX</h1>
+		<hr/>
+		<h2>LINK: {{.Address}} </h2>
+		<hr/>
+		<!-- Main -->
+		<div id="main">
+			<!-- Audio 
+			<audio id="audio" preload="auto" controls autoplay>
+			<source id="source" src="">
+			Your browser does not support the audio element.
+			</audio>-->
+			<div id="audioWrapper"></div>
+			<div><button id="stream" onclick="stream()"> > </button></div>
+			<div><button id="sync" onclick="sync()">sync</button><button id="sync" onclick="ended()"> >> </button></div>
+			<hr/>
+
+			<!-- List -->
+			<div id="songlist">
+				<ul class="list">
+				{{range .Songs}}
+					<li>
+						<button class="minus" onclick="minus({{.Name}})">-</button>
+						<div class="name">{{.Name}}</div>
+						<div class="score">{{.Score}}</div>
+						<button class="plus" onclick="plus({{.Name}})">+</button>
+					</li>
+				{{end}}
+				</ul>
+			</div>
+
+		</div>
+		<hr>
+	</div>
+<!-- Javascript -->
+<script src="/list.min.js"></script>
+<script type="text/javascript">
+var options = {
+    valueNames: [ 'name', 'score' ]
+};
+
+var songList = new List('songlist', options);
+
+var audioTime, audio;
+var audioWrapper = document.getElementById('audioWrapper');
+var songPlaying = "";
+var streamButton = document.getElementById('stream');
+
+var ws = new WebSocket(document.URL.replace("http", "ws")+"sock");
+// Websocket
+ws.onopen = function() {
+	// Socket
+	songList.sort('score', { order: "desc" });
+};
+ws.onmessage = function (e) { 
+	var msg = JSON.parse(e.data);
+	if (msg.Command == "update") {
+		update(msg)
+	} else if (msg.Command == "play") {
+		play(msg)
+	} else {
+		// Do nothing
+		alert("unkown message type: "+msg.Command)
+	}; 
+};
+ws.onclose = function() { 
+	try{audio.pause();}
+	catch(err) {}
+	return document.getElementById('main').innerHTML = "Connection is closed...";
+};
+
+var plus = function(song) {
+	var msg = {
+		Command: "plus",
+		Song: {Name:song,Score:0},
+		Time: Date.now()
+	};
+	ws.send(JSON.stringify(msg));
+};
+var minus = function(song) {
+	var msg = {
+		Command: "minus",
+		Song: {Name:song,Score:0},
+		Time: Date.now()
+	};
+	ws.send(JSON.stringify(msg));
+};
+var update = function(msg) {
+	// Update song value
+	var item = songList.get("name", msg.Song.Name)[0];
+	item.values({
+		name: msg.Song.Name,
+		score: msg.Song.Score
+	});
+	songList.sort('score', { order: "desc" });
+} 
+var next = function() {
+	var msg = {
+		Command: "next",
+		Song: {Name:songPlaying,Score:0},
+		Time: Date.now()
+	};
+	ws.send(JSON.stringify(msg));
+};
+var play = function(msg) {
+	//audioWrapper.innerHTML = "<audio preload='auto' controls src='/audio/"+msg.Song.Name+"'></audio>"
+	audio = new Audio('/audio/'+msg.Song.Name);
+	//audio.setAttribute('src','/audio/'+msg.Song.Name);
+	audio.preload = "auto";
+	audio.load();
+	audio.pause();
+	audioTime = msg.Time;
+	audioWrapper.innerHTML = "Now Playing: "+msg.Song.Name;
+	songPlaying = msg.Song.Name;
+
+	audio.addEventListener('canplay', seek, false);
+	return update(msg);
+};
+var seek = function() {
+	sync();
+	audio.play();
+
+	audio.removeEventListener('canplay', seek, false);
+	audio.addEventListener('ended', ended, false);
+};
+var ended = function() {
+	console.log("Song ended")
+	audio.removeEventListener('ended', ended, false);
+	audio.pause();
+	audio = null;
+	return next();
+};
+var stream = function() {
+	streamButton.className = 'hide';
+	audioWrapper.innerHTML = "Loading...";
+	return next();
+};
+var sync = function() {
+	var d = new Date();
+	audio.currentTime = (d.getTime()-audioTime)/1000;
+	console.log("Sync: ", (d.getTime()-audioTime)/1000);
+};
+</script>
+</body>
+</html>
